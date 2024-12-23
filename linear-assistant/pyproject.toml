@@ -1,0 +1,13 @@
+[project]
+name = "linear-assistant"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.6",
+    "humanlayer>=0.6.5",
+    "marvin>=2.3.8",
+    "pydantic>=2.10.4",
+    "uvicorn>=0.34.0",
+]
