@@ -117,6 +117,20 @@ wheels = [
 ]
 
 [[package]]
+name = "baml-py"
+version = "0.70.5"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ff/c5/dc7d59698b616133620e876c0464cec844a7fbdeb428f78eaea9553b87ad/baml_py-0.70.5-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:8625ae2e950bbc2015e3440e950677a87b45cfe6d6bf54ca116832d9fa4c5f53", size = 10900264 },
+    { url = "https://files.pythonhosted.org/packages/5a/55/b75e592c0539c9fe8d5937ace66b436ca2cb3d5db9633a70b2c621f2d8cd/baml_py-0.70.5-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:27b9800a30798ab8b8b6ade1a9c9d75cd586fd04f7e51ec1b1502e47dbabd6f8", size = 10096334 },
+    { url = "https://files.pythonhosted.org/packages/c3/f9/1f85e287ec6a2a33244694d135972c4fa1478c5f6b167458017263eb17a7/baml_py-0.70.5-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:473b8ce2602f5f05abfc85472144ac0bd44468b23f6f0d912669801b7e4d4628", size = 13355089 },
+    { url = "https://files.pythonhosted.org/packages/5d/ab/49f5e941e6fec18dfbbdd57e971c9ca03c982f6c6f53cf776c8da96e24ee/baml_py-0.70.5-cp38-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:affd7690f486020293d433acbdc196e3c4813317b06984f77072f44da57996df", size = 13063054 },
+    { url = "https://files.pythonhosted.org/packages/de/f6/0b24840f443a882a165f930fd3d583b1234ac54d2839a3a73cb4ffaf62f7/baml_py-0.70.5-cp38-abi3-musllinux_1_1_aarch64.whl", hash = "sha256:6687f4a4eac0e68eaa3b653749cf32bd34aa2aac0889267441bdef36b063ef4f", size = 13350003 },
+    { url = "https://files.pythonhosted.org/packages/2c/da/a075d757dc8dfdfcca51af3abbb3bbdae4184d4d8fe38842b4006c1c11b9/baml_py-0.70.5-cp38-abi3-musllinux_1_1_x86_64.whl", hash = "sha256:b6a08cd52b9f3444527d3098ac0e93f04a1238c5204f08e9b739198308a3a230", size = 13489000 },
+    { url = "https://files.pythonhosted.org/packages/69/64/7102afcf3d79b942119966bb8080c2c309b4ca169d51ed40cd792af5faf2/baml_py-0.70.5-cp38-abi3-win_amd64.whl", hash = "sha256:58ed9bfcf94428df1b73efe8284cdd5c788b2a2f0cc18d361be31825bbc2f9e5", size = 11099990 },
+]
+
+[[package]]
 name = "cachetools"
 version = "5.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -434,6 +448,7 @@ name = "linear-assistant"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "baml-py" },
     { name = "fastapi" },
     { name = "humanlayer" },
     { name = "marvin" },
@@ -443,6 +458,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "baml-py", specifier = ">=0.70.5" },
     { name = "fastapi", specifier = ">=0.115.6" },
     { name = "humanlayer", specifier = ">=0.6.5" },
     { name = "marvin", specifier = ">=2.3.8" },

@@ -3,15 +3,17 @@ import logging
 from enum import Enum
 import os
 from fastapi import BackgroundTasks, FastAPI
-from typing import Any, Dict, Literal, Union
-from linear import LinearClient
+from baml_client import b
+from baml_client.types import HumanResponse, Thread, Event, EmailPayload as BamlEmailPayload
+from typing import Any, Dict
+from linear import LinearClient, get_linear_client
 import marvin
 
 
 from pydantic import BaseModel
 from humanlayer import AsyncHumanLayer, FunctionCall, HumanContact
-from humanlayer.core.models import ContactChannel, EmailContactChannel, HumanContactSpec
-from humanlayer.core.models_agent_webhook import EmailMessage, EmailPayload
+from humanlayer.core.models import ContactChannel, HumanContactSpec, FunctionCallSpec
+from humanlayer.core.models_agent_webhook import EmailPayload
 
 app = FastAPI(title="HumanLayer FastAPI Email Example", version="1.0.0")
 
@@ -27,161 +29,21 @@ async def root() -> Dict[str, str]:
     }
 
 
-##############################
-########  Biz Logic   ########
-##############################
-class ClarificationRequest(BaseModel):
-    intent: Literal["request_more_information"]
-    message: str
+def to_state(thread: Thread) -> dict:
+    """Convert thread to a state dict for preservation"""
+    return thread.model_dump(mode="json")
 
 
-class DraftIssue(BaseModel):
-    intent: Literal["ready_to_draft_issue"]
-    title: str
-    description: str
-    team_id: str
+def from_state(state: dict) -> Thread:
+    """Restore thread from preserved state"""
+    return Thread.model_validate(state)
 
 
-class PublishIssue(BaseModel):
-    intent: Literal["human_approved__issue_ready_to_publish"]
-    title: str
-    description: str
-    team_id: str
-
-
-class AssignIssue(BaseModel):
-    intent: Literal["assign_issue"]
-    issue_id: str
-    email: str
-
-
-class GetIssueDetails(BaseModel):
-    intent: Literal["get_issue_details"]
-    issue_id: str
-
-
-class GetHighPriorityIssues(BaseModel):
-    intent: Literal["get_high_priority_issues"]
-
-
-class GetUnassignedIssues(BaseModel):
-    intent: Literal["get_unassigned_issues"]
-
-
-class GetIssuesByLabel(BaseModel):
-    intent: Literal["get_issues_by_label"]
-    label: str
-
-
-class GetIssuesDueBy(BaseModel):
-    intent: Literal["get_issues_due_by"]
-    due_date: str
-
-
-async def determine_next_step(
-    thread: "Thread",
-) -> Union[
-    ClarificationRequest,
-    DraftIssue,
-    PublishIssue,
-    AssignIssue,
-    GetIssueDetails,
-    GetHighPriorityIssues,
-    GetUnassignedIssues,
-    GetIssuesByLabel,
-    GetIssuesDueBy,
-]:
-    """determine the next step in the email thread"""
-
-    response: Union[
-        ClarificationRequest,
-        DraftIssue,
-        PublishIssue,
-        AssignIssue,
-        GetIssueDetails,
-        GetHighPriorityIssues,
-        GetUnassignedIssues,
-        GetIssuesByLabel,
-        GetIssuesDueBy,
-    ] = await marvin.cast_async(
-        json.dumps([event.model_dump(mode="json") for event in thread.events]),
-        Union[
-            ClarificationRequest,
-            DraftIssue,
-            PublishIssue,
-            AssignIssue,
-            GetIssueDetails,
-            GetHighPriorityIssues,
-            GetUnassignedIssues,
-            GetIssuesByLabel,
-            GetIssuesDueBy,
-        ],
-        instructions="""
-        determine if you have enough information to create an issue, or if you need more input.
-        The issue should be a task that needs to be completed.
-
-        Once an issue is drafted, a human will automatically review it. If the human approves,
-        and has not requested any changes, you should publish it.
-        """,
-    )
-    return response
-
-
-class Issue(BaseModel):
-    title: str
-    description: str
-
-
-async def publish_issue(issue_id: int) -> None:
-    """tool to publish an issue"""
-    raise NotImplementedError("publish_issue")
-
-
-##########################
-######## CONTEXT #########
-##########################
-
-
-class Event(BaseModel):
-    type: Literal[
-        "email_received",
-        "request_more_information",
-        "draft_issue",
-        "human_approved__issue_ready_to_publish",
-        "human_response",
-        "assign_issue",
-        "publish_issue",
-        "get_issue_details",
-        "get_high_priority_issues",
-        "get_unassigned_issues",
-        "get_issues_by_label",
-        "get_issues_due_by",
-    ]
-    data: Any  # don't really care about this, it will just be context to the LLM
-
-
-# todo you probably want to version this but for now lets assume we're not going to change the schema
-class Thread(BaseModel):
-    initial_email: EmailPayload
-    # initial_slack_message: SlackMessage
-    events: list[Event]
-
-    def to_state(self) -> dict:
-        """Convert thread to a state dict for preservation"""
-        return self.model_dump(mode="json")
-
-    @classmethod
-    def from_state(cls, state: dict) -> "Thread":
-        """Restore thread from preserved state"""
-        return cls.model_validate(state)
-
-
-##########################
-######## Handlers ########
-##########################
 async def handle_continued_thread(thread: Thread) -> None:
+    # its dumb that we have to cast this, can probably just remove the need to duplicate the HL type into our baml schema
+    casted: EmailPayload = EmailPayload.model_validate(thread.initial_email.model_dump_json())
     humanlayer = AsyncHumanLayer(
-        contact_channel=ContactChannel(email=thread.initial_email.as_channel())
+        contact_channel=ContactChannel(email=casted.as_channel())
     )
 
     # maybe: if thread gets too long, summarize parts of it - your call!
@@ -190,51 +52,52 @@ async def handle_continued_thread(thread: Thread) -> None:
     logger.info(
         f"thread received, determining next step. Last event: {thread.events[-1].type}"
     )
-    next_step = await determine_next_step(thread)
-    logger.info(f"next step: {next_step.intent}")
 
-    if next_step.intent == "request_more_information":
-        logger.info(f"requesting more information: {next_step.message}")
-        thread.events.append(
-            Event(type="request_more_information", data=next_step.message)
-        )
-        await humanlayer.create_human_contact(
-            spec=HumanContactSpec(msg=next_step.message, state=thread.to_state())
-        )
+    while True:
+        next_step = await b.DetermineNextStep(thread)
+        logger.info(f"next step: {next_step.intent}")
 
-    elif next_step.intent == "ready_to_draft_issue":
-        logger.info(f"drafted issue: {next_step.model_dump_json()}")
-        thread.events.append(Event(type="draft_issue", data=next_step))
-        await humanlayer.create_human_contact(
-            spec=HumanContactSpec(
-                msg=f"I've drafted an issue with title: {next_step.title} with description: {next_step.description}. Would you like me to publish it?",
-                state=thread.to_state(),
+        if next_step.intent == "request_more_information":
+            logger.info(f"requesting more information: {next_step.message}")
+            thread.events.append(Event(type="request_more_information", data=next_step))
+            await humanlayer.create_human_contact(
+                spec=HumanContactSpec(msg=next_step.message, state=to_state(thread))
             )
-        )
-
-    elif next_step.intent == "human_approved__issue_ready_to_publish":
-        logger.info(f"publishing issue: {next_step.model_dump_json()}")
-        LINEAR_API_KEY = os.environ["LINEAR_API_KEY"]
-        if not LINEAR_API_KEY:
-            raise ValueError("LINEAR_API_KEY is not set")
-        client = LinearClient(api_key=LINEAR_API_KEY)
-        client.create_issue(
-            title=next_step.title,
-            description=next_step.description,
-            team_id=next_step.team_id,
-        )
-        thread.events.append(Event(type="publish_issue", data=next_step))
-
-        await humanlayer.create_human_contact(
-            spec=HumanContactSpec(
-                msg="Issue has been published. Let me know if you need anything else!",
-                state=thread.to_state(),
+            logger.info("thread sent to humanlayer. Last event: request_more_information")
+            break
+        elif next_step.intent == "create_issue":
+            logger.info(f"drafted issue: {next_step.model_dump_json()}")
+            thread.events.append(Event(type="create_issue", data=next_step))
+            await humanlayer.create_function_call(
+                spec=FunctionCallSpec(
+                    fn="create_issue",
+                    kwargs=next_step.model_dump(),
+                )
             )
-        )
+            logger.info("thread sent to humanlayer. Last event: create_issue")
+            break
+        elif next_step.intent == "list_issues":
+            logger.info(f"listing issues: {next_step.model_dump_json()}")
+            thread.events.append(Event(type="list_issues", data=next_step))
+            client = get_linear_client()
+            issues = client.list_all_issues(
+                from_time=next_step.from_time, to_time=next_step.to_time
+            )
+            thread.events.append(
+                Event(type="list_issues_result", data=json.dumps(issues))
+            )
+            continue
 
-    else:
-        raise ValueError(f"unknown intent: {next_step.intent}")
-    logger.info(f"thread sent to humanlayer. Last event: {thread.events[-1].type}")
+        elif next_step.intent == "list_teams":
+            logger.info(f"listing teams: {next_step.model_dump_json()}")
+            thread.events.append(Event(type="list_teams", data=next_step))
+            teams = client.list_all_teams()
+            thread.events.append(
+                Event(type="list_teams_result", data=json.dumps(teams))
+            )
+            continue
+        else:
+            raise ValueError(f"unknown intent: {next_step.intent}")
 
 
 @app.post("/webhook/new-email-thread")
@@ -253,7 +116,7 @@ async def email_inbound(
         return {"status": "ok"}
 
     logger.info(f"inbound email received: {email_payload.model_dump_json()}")
-    thread = Thread(initial_email=email_payload, events=[])
+    thread = Thread(initial_email=BamlEmailPayload.model_validate(email_payload.model_dump_json()), events=[])
     thread.events.append(Event(type="email_received", data=email_payload))
 
     background_tasks.add_task(handle_continued_thread, thread)
@@ -279,11 +142,44 @@ async def human_response(
         thread.events.append(
             Event(
                 type="human_response",
-                data={"human_response": human_response.status.response},
+                data=HumanResponse(
+                    event_type="human_response",
+                    message=human_response.status.response,
+                ),
             )
         )
         background_tasks.add_task(handle_continued_thread, thread)
+    elif isinstance(human_response, FunctionCall):
+        # todo support more functions
+        if human_response.spec.fn != "create_issue":
+            raise ValueError(f"unknown function call: {human_response.spec.fn}")
 
+        if human_response.status.approved:
+            client = get_linear_client()
+            issue = client.create_issue(
+                title=human_response.spec.kwargs["title"],
+                description=human_response.spec.kwargs["description"],
+                team_id=human_response.spec.kwargs["team_id"],
+            )
+            thread.events.append(
+                Event(type="issue_create_result", data=json.dumps(issue))
+            )
+            # resume from here
+            background_tasks.add_task(handle_continued_thread, thread)
+        elif human_response.status.approved is False:
+            thread.events.append(
+                Event(
+                    type="human_response",
+                    data="User denied create_issue with feedback: "
+                    + human_response.status.comment,
+                )
+            )
+            # resume from here
+            background_tasks.add_task(handle_continued_thread, thread)
+        else:
+            raise ValueError(
+                "got FunctionCall webhook with null status, this should never happen"
+            )
     return {"status": "ok"}
 
 

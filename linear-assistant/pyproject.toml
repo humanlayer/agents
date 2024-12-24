@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "baml-py>=0.70.5",
     "fastapi>=0.115.6",
     "humanlayer>=0.6.5",
     "marvin>=2.3.8",

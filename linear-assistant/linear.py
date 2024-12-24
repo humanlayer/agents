@@ -1,7 +1,9 @@
+import os
 from typing import Dict, Optional, Any
 import requests
 
 
+# todo asyncify me
 class LinearClient:
     """Client for interacting with the Linear API."""
 
@@ -281,3 +283,10 @@ class LinearClient:
 #
 # # Assign an issue
 # client.assign_issue(issue_id="issue_id", email="user@example.com")
+
+
+def get_linear_client():
+    LINEAR_API_KEY = os.environ["LINEAR_API_KEY"]
+    if not LINEAR_API_KEY:
+        raise ValueError("LINEAR_API_KEY is not set")
+    return LinearClient(api_key=LINEAR_API_KEY)
